@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Runtime.InteropServices;
@@ -35,9 +36,9 @@ namespace GetAllFileProperties
 
         }
 
-        private static void CallWithSTA(string file, bool async = false)
+        private static void CallWithSTA(string file, string replacePath = null, bool async = false)
         {
-            object[] _args = new object[] { file };
+            object[] _args = new object[] { file, replacePath };
             if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA)
             {
                 GetExtendedProperties(_args);
@@ -55,12 +56,28 @@ namespace GetAllFileProperties
         {
             IEnumerable<FileInfo> _files = new DirectoryInfo(OPTIONS.Folder).EnumerateFiles(OPTIONS.Query ?? "*",
                 OPTIONS.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
+            if (OPTIONS.Days != default)
+            {
+                DateTime afterDate = DateTime.Now.AddDays(OPTIONS.Days);
+                IOrderedEnumerable<FileInfo> query = from f in _files
+                                                     where f.CreationTime > afterDate
+                                                     orderby f.CreationTime descending
+                                                     select f;
+                _files = query.AsParallel();
+            }
+
             int i = 0;
             Parallel.ForEach(_files, new ParallelOptions()
             {
                 MaxDegreeOfParallelism = OPTIONS.Threads
             }, fileInfo =>
             {
+                var _fName = fileInfo.FullName;
+                if (OPTIONS.FolderAliasPattern != default)
+                {
+                    string folder = fileInfo.Directory.FullName.Replace(OPTIONS.FolderAliasPattern, OPTIONS.FolderAliasReplace);
+                    _fName = Path.Combine(folder, fileInfo.Name);
+                }
                 Interlocked.Increment(ref i);
                 if (i % OPTIONS.SaveInterval == 0)
                 {
@@ -68,7 +85,7 @@ namespace GetAllFileProperties
                 }
                 try
                 {
-                    CallWithSTA(fileInfo.FullName);
+                    CallWithSTA(_fName);
                 }
                 catch (Exception e)
                 {
@@ -92,10 +109,19 @@ namespace GetAllFileProperties
         {
             try
             {
-                string filePath = (fp as object[])[0] as string;
+                object[] _args = (fp as object[]);
+                FileInfo _replaceFileInfo = default;
+                string _replacePath = default;
+                if (_args.Length == 2)
+                {
+                    _replacePath = _args[1] as string;
+                    _replaceFileInfo = new FileInfo(_replacePath);
+                }
+                string filePath = _args[0] as string;
                 string directory = Path.GetDirectoryName(filePath);
                 if (directory != null)
                 {
+
                     Shell shell = new Shell32.Shell();
                     Folder shellFolder = shell.NameSpace(directory);
                     string fileName = Path.GetFileName(filePath);
@@ -113,10 +139,24 @@ namespace GetAllFileProperties
                         string value = shellFolder.GetDetailsOf(folderitem, i);
                         if (!dictionary.ContainsKey(header) && !string.IsNullOrWhiteSpace(value))
                         {
+                            if (_replacePath != default)
+                            {
+                                switch (header)
+                                {
+                                    case "FolderName":
+                                        value = _replaceFileInfo.Directory.FullName;
+                                        break;
+                                    case "Filename":
+                                        value = _replaceFileInfo.Name;
+                                        break;
+                                    case "Path":
+                                        value = _replaceFileInfo.FullName;
+                                        break;
+                                }
+                            }
+
                             dictionary.Add(header, value);
                         }
-
-                        //Console.WriteLine(header + ": " + value);
                     }
 
                     Marshal.ReleaseComObject(shell);
@@ -128,7 +168,7 @@ namespace GetAllFileProperties
                 else
                 {
                     Console.Error.WriteLine("ERROR Directory null");
-                    var serializeObject = JsonConvert.SerializeObject(fp);
+                    string serializeObject = JsonConvert.SerializeObject(fp);
                     File.AppendAllText($"{OPTIONS.JsonFile}error.txt", serializeObject + Environment.NewLine);
                 }
             }
@@ -136,7 +176,7 @@ namespace GetAllFileProperties
             {
                 if (fp != null)
                 {
-                    var serializeObject = JsonConvert.SerializeObject(fp);
+                    string serializeObject = JsonConvert.SerializeObject(fp);
                     Console.Error.WriteLine("ERROR " + serializeObject);
                     File.AppendAllText($"{OPTIONS.JsonFile}error.txt", serializeObject + Environment.NewLine);
                 }
@@ -148,7 +188,7 @@ namespace GetAllFileProperties
             string server = OPTIONS.Server ?? "http://localhost:65044";
             //Console.WriteLine($"\n\n{jsonObj}\n\n");
             int batchSize = 80;
-            var _response = _xCLIENT
+            HttpResponseMessage _response = _xCLIENT
                 .PostAsync($"{OPTIONS.Server}/api/flactrack/AddSingle",
                     new StringContent(JsonConvert.SerializeObject(jsonObj), Encoding.UTF8, "application/json")).ConfigureAwait(false).GetAwaiter()
                 .GetResult();
