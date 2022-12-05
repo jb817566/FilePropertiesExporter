@@ -72,11 +72,11 @@ namespace GetAllFileProperties
                 MaxDegreeOfParallelism = OPTIONS.Threads
             }, fileInfo =>
             {
-                var _fName = fileInfo.FullName;
+                var _replacePath = fileInfo.FullName;
                 if (OPTIONS.FolderAliasPattern != default)
                 {
                     string folder = fileInfo.Directory.FullName.Replace(OPTIONS.FolderAliasPattern, OPTIONS.FolderAliasReplace);
-                    _fName = Path.Combine(folder, fileInfo.Name);
+                    _replacePath = Path.Combine(folder, fileInfo.Name);
                 }
                 Interlocked.Increment(ref i);
                 if (i % OPTIONS.SaveInterval == 0)
@@ -85,7 +85,7 @@ namespace GetAllFileProperties
                 }
                 try
                 {
-                    CallWithSTA(_fName);
+                    CallWithSTA(fileInfo.FullName, _replacePath);
                 }
                 catch (Exception e)
                 {
@@ -114,8 +114,12 @@ namespace GetAllFileProperties
                 string _replacePath = default;
                 if (_args.Length == 2)
                 {
-                    _replacePath = _args[1] as string;
-                    _replaceFileInfo = new FileInfo(_replacePath);
+                    try
+                    {
+                        _replacePath = _args[1] as string;
+                        _replaceFileInfo = new FileInfo(_replacePath);
+                    }
+                    catch { }
                 }
                 string filePath = _args[0] as string;
                 string directory = Path.GetDirectoryName(filePath);
@@ -139,7 +143,7 @@ namespace GetAllFileProperties
                         string value = shellFolder.GetDetailsOf(folderitem, i);
                         if (!dictionary.ContainsKey(header) && !string.IsNullOrWhiteSpace(value))
                         {
-                            if (_replacePath != default)
+                            if (_replacePath != default && _replaceFileInfo != default)
                             {
                                 switch (header)
                                 {
