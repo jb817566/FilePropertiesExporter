@@ -147,14 +147,22 @@ namespace GetAllFileProperties
                             {
                                 switch (header)
                                 {
-                                    case "FolderName":
-                                        value = _replaceFileInfo.Directory.FullName;
-                                        break;
                                     case "Filename":
                                         value = _replaceFileInfo.Name;
                                         break;
                                     case "Path":
                                         value = _replaceFileInfo.FullName;
+                                        break;
+                                    case "FolderPath":
+                                        value = _replaceFileInfo.Directory.Parent.FullName;
+                                        break;
+                                    case "Folder":
+                                        string _v = default;
+                                        if (dictionary.TryGetValue("FolderName", out _v))
+                                        {
+                                            string _folderPath = _replaceFileInfo.Directory.Parent.FullName;
+                                            value = $"{_v} ({new DirectoryInfo(_folderPath).Parent.FullName})";
+                                        }
                                         break;
                                 }
                             }
