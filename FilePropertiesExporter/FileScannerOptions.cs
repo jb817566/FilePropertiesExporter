@@ -4,6 +4,8 @@ namespace GetAllFileProperties
 {
     internal class FileScannerOptions
     {
+        [Option('u', "urlserver", Required = false, HelpText = "url for song server", Default = null)]
+        public string Server { get; set; }
         [Option('t', "threads", Required = false, HelpText = "# of threads", Default = 4)]
         public int Threads { get; set; }
         [Option('f', "folder", Required = true, HelpText = "folder to scan", Default = null)]

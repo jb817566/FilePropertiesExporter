@@ -2,7 +2,10 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
+using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CommandLine;
@@ -14,18 +17,22 @@ namespace GetAllFileProperties
 {
     class Program
     {
+
         static Object LOCK = new object();
         static ConcurrentBag<Dictionary<string, string>> _infoList = new ConcurrentBag<Dictionary<string, string>>();
+        private static HttpClient _xCLIENT = new HttpClient();
         private static FileScannerOptions OPTIONS { get; set; }
 
         static void Main(string[] args)
         {
+
             Parser.Default.ParseArguments<FileScannerOptions>(args)
                   .WithParsed<FileScannerOptions>(o =>
                   {
                       Program.OPTIONS = o;
                   });
             AsyncGetProperties(args);
+
         }
 
         private static void CallWithSTA(string file, bool async = false)
@@ -74,8 +81,11 @@ namespace GetAllFileProperties
 
         private static void WriteOut()
         {
+            return;
             lock (LOCK)
+            {
                 File.WriteAllText(OPTIONS.JsonFile, JsonConvert.SerializeObject(_infoList, Formatting.Indented));
+            }
         }
 
         private static void GetExtendedProperties(object fp)
@@ -113,6 +123,7 @@ namespace GetAllFileProperties
                     Marshal.ReleaseComObject(shellFolder);
                     Console.WriteLine("Got " + filePath);
                     _infoList.Add(dictionary);
+                    SendToAPI(JsonConvert.SerializeObject(dictionary));
                 }
                 else
                 {
@@ -130,6 +141,27 @@ namespace GetAllFileProperties
                     File.AppendAllText($"{OPTIONS.JsonFile}error.txt", serializeObject + Environment.NewLine);
                 }
             }
+        }
+
+        private static void SendToAPI(string jsonObj)
+        {
+            string server = OPTIONS.Server ?? "http://localhost:65044";
+            //Console.WriteLine($"\n\n{jsonObj}\n\n");
+            int batchSize = 80;
+            var _response = _xCLIENT
+                .PostAsync($"{OPTIONS.Server}/api/flactrack/AddSingle",
+                    new StringContent(JsonConvert.SerializeObject(jsonObj), Encoding.UTF8, "application/json")).ConfigureAwait(false).GetAwaiter()
+                .GetResult();
+            if (!_response.IsSuccessStatusCode)
+            {
+                Console.WriteLine("error " + _response.StatusCode);
+                Environment.Exit(0);
+            }
+        }
+
+        private static void PostToApi(string value)
+        {
+            throw new NotImplementedException();
         }
     }
 }
